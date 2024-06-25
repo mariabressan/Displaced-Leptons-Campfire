@@ -8,7 +8,7 @@ background: `/eos/atlas/atlascerngroupdisk/phys-susy/displacedleptonsRun3_ANA-SU
 ## Energyflow Documentation
 [https://energyflow.network/]([https://energyflow.network/])
 
-## Looking at ROOT files
+## Looking at ROOT files in Command Line
 Open a root file with `root /path/to/file.root` <br />
 Check what's in the root file with `.ls` <br />
 Print all the branches in a tree with `TREE_NAME->Print()` <br />
