@@ -1,83 +1,81 @@
-#  _____  ______ _   _ 
-# |  __ \|  ____| \ | |
-# | |__) | |__  |  \| |
-# |  ___/|  __| | . ` |
-# | |    | |    | |\  |
-# |_|    |_|    |_| \_|
-#  ________   __          __  __ _____  _      ______
-# |  ____\ \ / /    /\   |  \/  |  __ \| |    |  ____|
-# | |__   \ V /    /  \  | \  / | |__) | |    | |__
-# |  __|   > <    / /\ \ | |\/| |  ___/| |    |  __|
-# | |____ / . \  / ____ \| |  | | |    | |____| |____
-# |______/_/ \_\/_/    \_\_|  |_|_|    |______|______|
-
-# EnergyFlow - Python package for high-energy particle physics.
-# Copyright (C) 2017-2020 Patrick T. Komiske III and Eric Metodiev
-
-# standard library imports
 from __future__ import absolute_import, division, print_function
-
-# standard numerical library imports
 import numpy as np
-
-# energyflow imports
 import energyflow as ef
+import math
 from energyflow.archs import PFN
 from energyflow.datasets import qg_jets
 from energyflow.utils import data_split, remap_pids, to_categorical
-
 from sklearn.metrics import roc_auc_score, roc_curve
 import matplotlib.pyplot as plt
-
-################################### SETTINGS ###################################
-# the commented values correspond to those in 1810.05165
-###############################################################################
-
-# data controls, can go up to 2000000 for full dataset
-train, val, test = 750, 100, 150
-# train, val, test = 1000000, 200000, 200000
-use_pids = False
+import ROOT
+import numpy as np
+import tensorflow as tf
+from astropy.io import ascii
+from astropy.table import Table
+import argparse
+from math import ceil
+import os 
 
 # network architecture parameters
-Phi_sizes, F_sizes = (100, 100, 128), (100, 100, 100)
-# Phi_sizes, F_sizes = (100, 100, 256), (100, 100, 100)
+Phi_sizes, F_sizes = (20, 20, 20), (20, 20, 20)
 
 # network training parameters
-num_epoch = 5
+num_epoch = 10
 batch_size = 500
 
 ################################################################################
 
 print("load data")
-X, y = qg_jets.load(train + val + test)
+sig_fn = ['/eos/atlas/atlascerngroupdisk/phys-susy/displacedleptonsRun3_ANA-SUSY-2022-11/ntuples/v2.1/oneEM/signal_ltrw/unskimmed/SelSelLLP_100_0_10ns.root'] 
+bkg_fn = ['/eos/atlas/atlascerngroupdisk/phys-susy/displacedleptonsRun3_ANA-SUSY-2022-11/ntuples/v1p9/oneEM/user.ancsmith.data22_13p6TeV.00437756.physics_Main.deriv.v9conf_VL_23__trees.root/user.ancsmith.00437756.f1305_m2142_p6000.36817393._000004.trees.root'] 
+sig, bkg = ROOT.TChain("trees_SR_oneEM_noSkim_"), ROOT.TChain("trees_SR_oneEM_")
+for fn in sig_fn:
+    sig.Add(fn)
+for fn in bkg_fn:
+    bkg.Add(fn)
+rdf = {}
+rdf['sig'] = ROOT.RDataFrame(sig)
+rdf['bkg'] = ROOT.RDataFrame(bkg)
 
-print("convert labels to categorical")
-Y = to_categorical(y, num_classes=2)
+for df in rdf:
+    # rdf[df]=rdf[df].Filter(cut)
+    rdf[df]=rdf[df].Define('el_d0' ,'electron_d0[0]') 
+    rdf[df]=rdf[df].Define('el_z0' ,'electron_z0[0]')
+    rdf[df]=rdf[df].Define('el_dpt' ,'electron_dpt[0]')
 
-print('Loaded quark and gluon jets')
+rdf['sig']=rdf['sig'].Define('wt' ,'pileupWeight*mcEventWeight')
+rdf['bkg']=rdf['bkg'].Define('wt' ,'pileupWeight')
+rdf['sig']=rdf['sig'].Define('classification' ,'1')
+rdf['bkg']=rdf['bkg'].Define('classification' ,'0')
 
-print("preprocess by centering jets and normalizing pts")
-for x in X:
-    mask = x[:,0] > 0
-    yphi_avg = np.average(x[mask,1:3], weights=x[mask,0], axis=0)
-    x[mask,1:3] -= yphi_avg
-    x[mask,0] /= x[:,0].sum()
+# Convert to numpy array
+NN_inputs = ['el_d0', 'el_z0', 'el_dpt']
 
-print("handle particle id channel")
-if use_pids:
-    remap_pids(X, pid_i=3)
-else:
-    X = X[:,:,:3]
+# add inputs and weights
+features = NN_inputs + ['wt','classification']
 
-print('Finished preprocessing')
+# convert to numpy
+np_sig = rdf['sig'].AsNumpy(columns=features)
+np_bkg = rdf['bkg'].AsNumpy(columns=features)
 
-print("do train/val/test split") 
+num_sig_evt = len(np_sig['classification'])
+num_bkg_evt = len(np_bkg['classification'])
+
+# define weight
+sample_weight = np.concatenate((np_sig['wt'],np_bkg['wt']))
+num_events = len(sample_weight)
+X = np.zeros((num_events,1, len(NN_inputs)))
+Y = to_categorical(np.concatenate((np_sig['classification'],np_bkg['classification'])), num_classes=2)
+train, val, test = int(num_events*0.6), int(num_events*0.2), int(num_events*0.2) # suggested percent split
+
+for i,input in enumerate(NN_inputs):
+    X[:,0,i] = np.concatenate((np_sig[input],np_bkg[input]))
+
 (X_train, X_val, X_test,
  Y_train, Y_val, Y_test) = data_split(X, Y, val=val, test=test)
 
-print('Done train/val/test split')
 print('Model summary:')
-pfn = PFN(input_dim=X.shape[-1], Phi_sizes=Phi_sizes, F_sizes=F_sizes)
+pfn = PFN(input_dim=3, Phi_sizes=Phi_sizes, F_sizes=F_sizes)
 
 print("train model")
 pfn.fit(X_train, Y_train,
