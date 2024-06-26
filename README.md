@@ -17,3 +17,6 @@ You can also look at multiple vairables and place cuts with `TREE_NAME->Scan(VAR
 An example of a cut would be `VARN_NAME1>0` <br />
 Plot the histogram of a variable with `TREE_NAME->Draw(VAR_NAME)` <br/>
 Make a 2D histogram with `TREE_NAME->Draw(YVAR_NAME:XVAR_NAME)`
+
+## Conda env
+`conda env create -f tf.yml`
