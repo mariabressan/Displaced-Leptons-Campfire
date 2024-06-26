@@ -6,6 +6,7 @@ from energyflow.archs import PFN
 from energyflow.datasets import qg_jets
 from energyflow.utils import data_split, remap_pids, to_categorical
 from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import matplotlib.pyplot as plt
 import ROOT
 import numpy as np
@@ -58,6 +59,14 @@ features = NN_inputs + ['wt','classification']
 np_sig = rdf['sig'].AsNumpy(columns=features)
 np_bkg = rdf['bkg'].AsNumpy(columns=features)
 
+'''# transform vars for input
+scaler = StandardScaler()
+for key in np_sig:
+    np_sig[key] -= np.average(np_sig[key])
+    np_sig[key] /= np.sum(np_sig[key])
+    np_bkg[key] -= np.average(np_bkg[key])
+    np_bkg[key] /= np.sum(np_bkg[key])
+'''
 num_sig_evt = len(np_sig['classification'])
 num_bkg_evt = len(np_bkg['classification'])
 print("num sig evt: ",num_sig_evt)
@@ -74,7 +83,8 @@ for i,input in enumerate(NN_inputs):
     X[:,0,i] = np.concatenate((np_sig[input],np_bkg[input]))
 
 (X_train, X_val, X_test,
- Y_train, Y_val, Y_test) = data_split(X, Y, val=val, test=test)
+ Y_train, Y_val, Y_test,
+ sw_train, sw_val, sw_test) = data_split(X, Y, sample_weight, val=val, test=test)
 
 print('Model summary:')
 pfn = PFN(input_dim=3, Phi_sizes=Phi_sizes, F_sizes=F_sizes)
@@ -84,7 +94,9 @@ pfn.fit(X_train, Y_train,
         epochs=num_epoch,
         batch_size=batch_size,
         validation_data=(X_val, Y_val),
-        verbose=1)
+        verbose=1,
+        #sample_weight=sw_train,
+        class_weight={0: num_sig_evt/num_bkg_evt, 1: 1.})
 
 print("get predictions on test data")
 preds = pfn.predict(X_test, batch_size=1000)
