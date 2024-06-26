@@ -17,7 +17,7 @@ from math import ceil
 import os 
 
 # network architecture parameters
-Phi_sizes, F_sizes = (20, 20, 20), (20, 20, 20)
+Phi_sizes, F_sizes = (20, 20), (20, 20)
 
 # network training parameters
 num_epoch = 10
@@ -60,6 +60,8 @@ np_bkg = rdf['bkg'].AsNumpy(columns=features)
 
 num_sig_evt = len(np_sig['classification'])
 num_bkg_evt = len(np_bkg['classification'])
+print("num sig evt: ",num_sig_evt)
+print("num bkg evt: ",num_bkg_evt)
 
 # define weight
 sample_weight = np.concatenate((np_sig['wt'],np_bkg['wt']))
@@ -96,12 +98,6 @@ print()
 print('PFN AUC:', auc)
 print()
 
-# get multiplicity and mass for comparison
-masses = np.asarray([ef.ms_from_p4s(ef.p4s_from_ptyphims(x).sum(axis=0)) for x in X])
-mults = np.asarray([np.count_nonzero(x[:,0]) for x in X])
-mass_fp, mass_tp, threshs = roc_curve(Y[:,1], -masses)
-mult_fp, mult_tp, threshs = roc_curve(Y[:,1], -mults)
-
 # some nicer plot settings 
 plt.rcParams['figure.figsize'] = (4,4)
 plt.rcParams['font.family'] = 'serif'
@@ -109,12 +105,10 @@ plt.rcParams['figure.autolayout'] = True
 
 # plot the ROC curves
 plt.plot(pfn_tp, 1-pfn_fp, '-', color='black', label='PFN')
-plt.plot(mass_tp, 1-mass_fp, '-', color='blue', label='Jet Mass')
-plt.plot(mult_tp, 1-mult_fp, '-', color='red', label='Multiplicity')
 
 # axes labels
-plt.xlabel('Quark Jet Efficiency')
-plt.ylabel('Gluon Jet Rejection')
+plt.xlabel('Signal Efficiency')
+plt.ylabel('Background Rejection')
 
 # axes limits
 plt.xlim(0, 1)
